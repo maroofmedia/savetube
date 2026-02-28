@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- SEO -->
+  <title>SaveTube — Free YouTube Video Downloader | MP4 & MP3</title>
+  <meta name="description"
+    content="Download YouTube videos in all qualities — 144p to 4K as MP4 or extract audio as MP3. 100% free, no sign-up, no ads. Fast and simple.">
+  <meta name="keywords"
+    content="youtube downloader, download youtube video, youtube to mp4, youtube to mp3, free youtube downloader, video downloader, save youtube video">
+  <meta name="author" content="SaveTube">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://savetube.marooflone.com/">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="SaveTube — Free YouTube Video Downloader">
+  <meta property="og:description"
+    content="Download YouTube videos in all qualities as MP4 or MP3. Free, fast, no sign-up.">
+  <meta property="og:url" content="https://savetube.marooflone.com/">
+  <meta property="og:site_name" content="SaveTube">
+
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="SaveTube — Free YouTube Video Downloader">
+  <meta name="twitter:description"
+    content="Download YouTube videos in all qualities as MP4 or MP3. Free, fast, no sign-up.">
+
+  <!-- PWA -->
+  <meta name="theme-color" content="#6d5cff">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SaveTube">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icons/icon.svg">
+
+  <!-- Favicon -->
+  <link rel="icon"
+    href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%236d5cff'/><polygon points='38,25 38,75 78,50' fill='white'/></svg>">
+
+  <!-- Fonts & Styles -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "SaveTube",
+    "description": "Download YouTube videos in all qualities as MP4 or extract audio as MP3. Free, fast, no sign-up.",
+    "url": "https://savetube.marooflone.com/",
+    "applicationCategory": "MultimediaApplication",
+    "operatingSystem": "Any",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    }
+  }
+  </script>
+</head>
+
+<body>
+  <div class="app">
+
+    <header class="hero">
+      <div class="hero-inner">
+        <div class="hero-badge">100% Free · No Sign-up</div>
+        <h1 class="hero-title">Download YouTube Videos<br><span class="hero-accent">Simply &amp; Instantly</span></h1>
+        <p class="hero-desc">Paste a link. Pick your quality. Download as MP4 video or MP3 audio.<br>No ads, no
+          nonsense.</p>
+
+        <div class="search-area">
+          <input id="urlInput" type="url" class="url-input" placeholder="https://youtube.com/watch?v=..."
+            autocomplete="off" spellcheck="false">
+          <button id="fetchBtn" class="go-btn" disabled>
+            <span class="f-text">Download</span>
+            <span class="f-spin" hidden><svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="3"
+                  stroke-dasharray="50 20" />
+              </svg></span>
+          </button>
+        </div>
+
+        <div class="hero-features">
+          <div class="hf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="23 7 16 12 23 17 23 7" />
+              <rect x="1" y="5" width="15" height="14" rx="2" />
+            </svg>MP4 Video</div>
+          <div class="hf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 18V5l12-2v13" />
+              <circle cx="6" cy="18" r="3" />
+              <circle cx="18" cy="16" r="3" />
+            </svg>MP3 Audio</div>
+          <div class="hf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            </svg>No Ads</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Instructions — hidden once results load -->
+    <section class="how-to" id="howTo">
+      <div class="stepper">
+        <div class="step">
+          <div class="step-circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+          </div>
+          <p class="step-title">1. Open YouTube</p>
+          <p class="step-sub">Find your video</p>
+        </div>
+        <div class="step-line"></div>
+        <div class="step">
+          <div class="step-circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+            </svg>
+          </div>
+          <p class="step-title">2. Copy Link</p>
+          <p class="step-sub">Share → Copy link</p>
+        </div>
+        <div class="step-line"></div>
+        <div class="step">
+          <div class="step-circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+            </svg>
+          </div>
+          <p class="step-title">3. Paste Here</p>
+          <p class="step-sub">Paste URL above</p>
+        </div>
+        <div class="step-line"></div>
+        <div class="step">
+          <div class="step-circle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+          </div>
+          <p class="step-title">4. Download</p>
+          <p class="step-sub">Pick quality &amp; save</p>
+        </div>
+      </div>
+    </section>
+
+    <div class="error-bar" id="errorBar" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="15" y1="9" x2="9" y2="15" />
+        <line x1="9" y1="9" x2="15" y2="15" />
+      </svg>
+      <span id="errorMsg"></span>
+    </div>
+
+    <main class="results" id="results" hidden>
+      <div class="vid-card">
+        <div class="vid-thumb"><img id="vThumb"><span class="vid-dur" id="vDur"></span></div>
+        <div class="vid-info">
+          <h2 id="vTitle"></h2>
+          <p class="vid-ch" id="vCh"></p>
+          <p class="vid-stats" id="vStats"></p>
+        </div>
+      </div>
+
+      <div class="tab-bar">
+        <button class="tab active" data-t="video">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="23 7 16 12 23 17 23 7" />
+            <rect x="1" y="5" width="15" height="14" rx="2" />
+          </svg>
+          Video <small>MP4</small>
+        </button>
+        <button class="tab" data-t="audio">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 18V5l12-2v13" />
+            <circle cx="6" cy="18" r="3" />
+            <circle cx="18" cy="16" r="3" />
+          </svg>
+          Audio <small>MP3</small>
+        </button>
+      </div>
+
+      <div class="pane active" id="paneVideo">
+        <p class="pane-hint">Choose quality — downloads as <strong>.mp4</strong> with audio.</p>
+        <div id="qGrid" class="q-grid"></div>
+      </div>
+
+      <div class="pane" id="paneAudio">
+        <p class="pane-hint">One-click download — best quality as <strong>.mp3</strong></p>
+        <div class="mp3-card">
+          <div class="mp3-left">
+            <div class="mp3-icon">♪</div>
+            <div>
+              <p class="mp3-title">Best Quality MP3</p>
+              <p class="mp3-sub" id="mp3Sub">Works on phones, laptops, any media player</p>
+            </div>
+          </div>
+          <button class="dl-btn" id="mp3Btn">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Download MP3
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="foot">
+      <p>Made with ❤️ by <a href="https://www.marooflone.com" target="_blank" rel="noopener">Maroof Lone</a></p>
+      <p class="foot-sub">For personal use only</p>
+    </footer>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+  <script src="app.js"></script>
+</body>
+
+</html>

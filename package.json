@@ -1,0 +1,20 @@
+{
+  "name": "savetube",
+  "version": "1.0.0",
+  "description": "Download YouTube videos as MP4 or audio as MP3 — free, fast, no sign-up",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "NODE_ENV=production node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "compression": "^1.7.4",
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "express-rate-limit": "^7.4.1",
+    "helmet": "^8.0.0"
+  }
+}
