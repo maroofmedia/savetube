@@ -172,6 +172,7 @@ app.post('/api/info', infoLimiter, async (req, res) => {
 // • Pre-muxed formats (≤720p): proxy stream from CDN with Content-Length → full browser progress
 // • Merge formats (1080p+): pipe through ffmpeg that downloads + muxes → streaming MP4, no temp files
 // • Audio: pipe through ffmpeg for mp3 conversion → streaming
+// ── GET /api/download ───────────────────────────
 app.get('/api/download', downloadLimiter, async (req, res) => {
     const { url, type, height, title } = req.query;
     if (!url || !type) return res.status(400).json({ error: 'url and type are required' });
@@ -183,101 +184,48 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
         .replace(/\s+/g, ' ').trim().substring(0, 200) || 'download';
 
     const isAudio = type === 'audio';
+    
+    // 1. Create a unique, hidden temporary file path for this download
+    const tmpFile = path.join(os.tmpdir(), `dl_${Date.now()}_${Math.floor(Math.random()*1000)}.${isAudio ? 'mp3' : 'mp4'}`);
+
     let released = false;
-    const release = () => { if (!released) { released = true; releaseSlot(); } };
-    res.on('close', release);
+    const cleanup = () => { 
+        if (!released) { released = true; releaseSlot(); }
+        // 2. Instantly delete the file from the server once sent to save disk space
+        if (fs.existsSync(tmpFile)) fs.unlink(tmpFile, () => {});
+    };
+    res.on('close', cleanup);
 
     try {
         const h = parseInt(height, 10) || 720;
-        
-        // Ask yt-dlp for the full JSON so we get URLs AND Headers
-        const formatQuery = isAudio 
+        const format = isAudio 
             ? 'bestaudio' 
-            : `best[height<=${h}][ext=mp4]/best[height<=${h}]/bestvideo[height<=${h}]+bestaudio`;
+            : `bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${h}]/best`;
 
-        const rawInfo = await runYtDlp(['--dump-json', '-f', formatQuery, url]);
-        const info = JSON.parse(rawInfo);
-
-        // --- EXTRACT ALL HEADERS ---
-        const ytHeaders = info.http_headers || {};
-        let headerStr = '';
-        for (const key in ytHeaders) {
-            headerStr += `${key}: ${ytHeaders[key]}\r\n`;
-        }
+        // 3. We let yt-dlp do ALL the downloading, completely bypassing FFmpeg's network block
+        const args = ['--quiet', '-f', format, '-o', tmpFile, url];
 
         if (isAudio) {
-            const audioUrl = info.url;
-
-            res.setHeader('Content-Type', 'audio/mpeg');
-            res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeTitle + '.mp3')}"`);
-
-            const ffmpeg = spawn('ffmpeg', [
-                '-hide_banner', '-loglevel', 'error',
-                '-http_proxy', 'socks5://127.0.0.1:40000',
-                '-headers', headerStr, // Force FFmpeg to wear the disguise
-                '-i', audioUrl,
-                '-vn', '-f', 'mp3', '-q:a', '0',
-                'pipe:1',
-            ]);
-            ffmpeg.stdout.pipe(res);
-            ffmpeg.stderr.on('data', (d) => console.error('[FFMPEG-AUDIO]', d.toString()));
-            ffmpeg.on('close', release);
-            ffmpeg.on('error', release);
-
+            args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
         } else {
-            const filename = encodeURIComponent(safeTitle + '.mp4');
-            res.setHeader('Content-Type', 'video/mp4');
-            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-
-            if (info.requested_formats) {
-                // Merged Video + Audio
-                const vUrl = info.requested_formats[0].url;
-                const aUrl = info.requested_formats[1].url;
-
-                const ffmpeg = spawn('ffmpeg', [
-                    '-hide_banner', '-loglevel', 'error',
-                    '-http_proxy', 'socks5://127.0.0.1:40000',
-                    '-headers', headerStr, // Disguise the video fetch
-                    '-i', vUrl,
-                    '-headers', headerStr, // Disguise the audio fetch
-                    '-i', aUrl,
-                    '-c', 'copy',
-                    '-movflags', 'frag_keyframe+empty_moov',
-                    '-f', 'mp4',
-                    'pipe:1',
-                ]);
-                ffmpeg.stdout.pipe(res);
-                ffmpeg.stderr.on('data', (d) => console.error('[FFMPEG-MERGE]', d.toString()));
-                ffmpeg.on('close', release);
-                ffmpeg.on('error', release);
-            } else {
-                // Single Pre-muxed URL
-                const vUrl = info.url;
-                const size = info.filesize || info.filesize_approx || 0;
-                if (size > 0) res.setHeader('Content-Length', size);
-
-                const getter = vUrl.startsWith('https') ? https : http;
-                getter.get(vUrl, { 
-                    agent: proxyAgent, 
-                    headers: ytHeaders // Pass ALL exact headers to Node
-                }, (upstream) => {
-                    if (upstream.statusCode >= 400) {
-                        release();
-                        if (!res.headersSent) res.status(502).json({ error: 'CDN error' });
-                        return;
-                    }
-                    upstream.pipe(res);
-                    upstream.on('end', release);
-                    upstream.on('error', () => { release(); res.end(); });
-                }).on('error', (err) => {
-                    release();
-                    console.error('[CDN]', err.message);
-                    if (!res.headersSent) res.status(500).json({ error: 'Download failed' });
-                });
-            }
+            args.push('--merge-output-format', 'mp4');
         }
+
+        // Give yt-dlp up to 5 minutes to download and merge the file locally
+        await runYtDlp(args, 300000); 
+
+        // 4. Stream the securely downloaded file directly to the user's browser
+        const filename = encodeURIComponent(safeTitle + (isAudio ? '.mp3' : '.mp4'));
+        res.setHeader('Content-Type', isAudio ? 'audio/mpeg' : 'video/mp4');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+        const stream = fs.createReadStream(tmpFile);
+        stream.pipe(res);
+        stream.on('end', cleanup);
+        stream.on('error', cleanup);
+
     } catch (err) {
-        release();
+        cleanup();
         console.error('[DOWNLOAD]', err.message);
         if (!res.headersSent) res.status(500).json({ error: 'Download failed. Please try again.' });
     }
