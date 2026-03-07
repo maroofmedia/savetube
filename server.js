@@ -16,7 +16,7 @@ const https = require('https');
 const http = require('http');
 
 // ── Config ──────────────────────────────────────
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 4000;
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT, 10) || 3;
 
