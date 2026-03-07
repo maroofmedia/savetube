@@ -51,8 +51,8 @@ app.use(express.static(path.join(__dirname, 'public'), {
 const SPEED_FLAGS = [
     '--no-warnings', '--no-playlist', '--no-check-certificates',
     '--socket-timeout', '15', '--extractor-retries', '0',
-    '--proxy', 'socks5://127.0.0.1:40000',     // The Cloudflare Tunnel
-    '--extractor-args', 'youtube:client=tv',   // The Anti-Bot Disguise
+    '--proxy', 'socks5://127.0.0.1:40000',
+    '--extractor-args', 'youtube:client=tv',
 ];
 
 // ── Standard YouTube heights ────────────────────
@@ -76,7 +76,7 @@ function acquireSlot() {
 function releaseSlot() { activeDownloads = Math.max(0, activeDownloads - 1); }
 
 // ── Helper: run yt-dlp ──────────────────────────
-function runYtDlp(args, timeoutMs = 30000) {
+function runYtDlp(args, timeoutMs = 300000) {
     return new Promise((resolve, reject) => {
         const proc = spawn('yt-dlp', [...SPEED_FLAGS, ...args]);
         let stdout = '', stderr = '';
@@ -163,13 +163,13 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
 
     const isAudio = type === 'audio';
     
-    // 1. Create a unique temporary file
+    // 1. Create a unique, hidden temporary file path for this download
     const tmpFile = path.join(os.tmpdir(), `dl_${Date.now()}_${Math.floor(Math.random()*1000)}.${isAudio ? 'mp3' : 'mp4'}`);
 
     let released = false;
     const cleanup = () => { 
         if (!released) { released = true; releaseSlot(); }
-        // 2. Delete the file to save disk space
+        // 2. Instantly delete the file from the server once sent to save disk space
         if (fs.existsSync(tmpFile)) fs.unlink(tmpFile, () => {});
     };
     res.on('close', cleanup);
@@ -180,7 +180,7 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
             ? 'bestaudio' 
             : `bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${h}]/best`;
 
-        // 3. Download purely via yt-dlp locally
+        // 3. let yt-dlp do ALL the downloading, completely bypassing FFmpeg's network block
         const args = ['--quiet', '-f', format, '-o', tmpFile, url];
 
         if (isAudio) {
@@ -189,21 +189,21 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
             args.push('--merge-output-format', 'mp4');
         }
 
-        // Give yt-dlp 5 minutes to securely download and merge
+        // Give yt-dlp up to 5 minutes to download and merge the file locally
         await runYtDlp(args, 300000); 
 
-        // 4. Verify successful creation
+        // Verify the file was created successfully
         if (!fs.existsSync(tmpFile)) {
-            throw new Error("File creation failed.");
+            throw new Error("Download failed to create temporary file.");
         }
 
-        // 5. Stream the downloaded file straight to the browser with size headers
+        // 4. Stream the securely downloaded file directly to the user's browser
         const filename = encodeURIComponent(safeTitle + (isAudio ? '.mp3' : '.mp4'));
         const stat = fs.statSync(tmpFile);
-
+        
         res.setHeader('Content-Type', isAudio ? 'audio/mpeg' : 'video/mp4');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Length', stat.size);
+        res.setHeader('Content-Length', stat.size); // Tells browser the exact file size
 
         const stream = fs.createReadStream(tmpFile);
         stream.pipe(res);
