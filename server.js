@@ -14,8 +14,6 @@ const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const http = require('http');
-const { SocksProxyAgent } = require('socks-proxy-agent');
-const proxyAgent = new SocksProxyAgent('socks5://127.0.0.1:40000');
 
 // ── Config ──────────────────────────────────────
 const PORT = process.env.PORT || 4000;
@@ -53,7 +51,8 @@ app.use(express.static(path.join(__dirname, 'public'), {
 const SPEED_FLAGS = [
     '--no-warnings', '--no-playlist', '--no-check-certificates',
     '--socket-timeout', '15', '--extractor-retries', '0',
-    '--proxy', 'socks5://127.0.0.1:40000',
+    '--proxy', 'socks5://127.0.0.1:40000',     // The Cloudflare Tunnel
+    '--extractor-args', 'youtube:client=tv',   // The Anti-Bot Disguise
 ];
 
 // ── Standard YouTube heights ────────────────────
@@ -92,20 +91,6 @@ function runYtDlp(args, timeoutMs = 30000) {
     });
 }
 
-// ── Helper: get Content-Length via HEAD request ──
-function getContentLength(url) {
-    return new Promise((resolve) => {
-        const mod = url.startsWith('https') ? https : http;
-        const req = mod.request(url, { method: 'HEAD', agent: proxyAgent, headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
-            resolve(parseInt(res.headers['content-length'], 10) || 0);
-            res.resume(); // drain
-        });
-        req.on('error', () => resolve(0));
-        req.setTimeout(8000, () => { req.destroy(); resolve(0); });
-        req.end();
-    });
-}
-
 // ── URL validation ──────────────────────────────
 function isValidYouTubeURL(url) {
     if (typeof url !== 'string' || url.length > 500) return false;
@@ -125,7 +110,6 @@ app.post('/api/info', infoLimiter, async (req, res) => {
         const raw = await runYtDlp(['--dump-json', url], 60000);
         const info = JSON.parse(raw);
 
-        // Collect ALL unique video heights
         const heightMap = new Map();
         for (const f of info.formats || []) {
             if (f.vcodec && f.vcodec !== 'none' && f.height) {
@@ -142,7 +126,6 @@ app.post('/api/info', infoLimiter, async (req, res) => {
             .sort((a, b) => b[0] - a[0])
             .map(([h, data]) => ({ height: h, label: `${h}p`, filesize: data.filesize }));
 
-        // Best audio size estimate
         let audioSize = 0;
         for (const f of info.formats || []) {
             if (f.acodec && f.acodec !== 'none' && (!f.vcodec || f.vcodec === 'none')) {
@@ -168,11 +151,6 @@ app.post('/api/info', infoLimiter, async (req, res) => {
 });
 
 // ── GET /api/download ───────────────────────────
-// Strategy: get direct YouTube CDN URLs and stream through.
-// • Pre-muxed formats (≤720p): proxy stream from CDN with Content-Length → full browser progress
-// • Merge formats (1080p+): pipe through ffmpeg that downloads + muxes → streaming MP4, no temp files
-// • Audio: pipe through ffmpeg for mp3 conversion → streaming
-// ── GET /api/download ───────────────────────────
 app.get('/api/download', downloadLimiter, async (req, res) => {
     const { url, type, height, title } = req.query;
     if (!url || !type) return res.status(400).json({ error: 'url and type are required' });
@@ -185,13 +163,13 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
 
     const isAudio = type === 'audio';
     
-    // 1. Create a unique, hidden temporary file path for this download
+    // 1. Create a unique temporary file
     const tmpFile = path.join(os.tmpdir(), `dl_${Date.now()}_${Math.floor(Math.random()*1000)}.${isAudio ? 'mp3' : 'mp4'}`);
 
     let released = false;
     const cleanup = () => { 
         if (!released) { released = true; releaseSlot(); }
-        // 2. Instantly delete the file from the server once sent to save disk space
+        // 2. Delete the file to save disk space
         if (fs.existsSync(tmpFile)) fs.unlink(tmpFile, () => {});
     };
     res.on('close', cleanup);
@@ -202,7 +180,7 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
             ? 'bestaudio' 
             : `bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${h}]/best`;
 
-        // 3. We let yt-dlp do ALL the downloading, completely bypassing FFmpeg's network block
+        // 3. Download purely via yt-dlp locally
         const args = ['--quiet', '-f', format, '-o', tmpFile, url];
 
         if (isAudio) {
@@ -211,13 +189,21 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
             args.push('--merge-output-format', 'mp4');
         }
 
-        // Give yt-dlp up to 5 minutes to download and merge the file locally
+        // Give yt-dlp 5 minutes to securely download and merge
         await runYtDlp(args, 300000); 
 
-        // 4. Stream the securely downloaded file directly to the user's browser
+        // 4. Verify successful creation
+        if (!fs.existsSync(tmpFile)) {
+            throw new Error("File creation failed.");
+        }
+
+        // 5. Stream the downloaded file straight to the browser with size headers
         const filename = encodeURIComponent(safeTitle + (isAudio ? '.mp3' : '.mp4'));
+        const stat = fs.statSync(tmpFile);
+
         res.setHeader('Content-Type', isAudio ? 'audio/mpeg' : 'video/mp4');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', stat.size);
 
         const stream = fs.createReadStream(tmpFile);
         stream.pipe(res);
