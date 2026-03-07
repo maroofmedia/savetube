@@ -198,9 +198,12 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
         const rawInfo = await runYtDlp(['--dump-json', '-f', formatQuery, url]);
         const info = JSON.parse(rawInfo);
 
-        // Extract the exact headers YouTube expects
+        // --- EXTRACT ALL HEADERS ---
         const ytHeaders = info.http_headers || {};
-        const userAgent = ytHeaders['User-Agent'] || 'Mozilla/5.0';
+        let headerStr = '';
+        for (const key in ytHeaders) {
+            headerStr += `${key}: ${ytHeaders[key]}\r\n`;
+        }
 
         if (isAudio) {
             const audioUrl = info.url;
@@ -211,7 +214,7 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
             const ffmpeg = spawn('ffmpeg', [
                 '-hide_banner', '-loglevel', 'error',
                 '-http_proxy', 'socks5://127.0.0.1:40000',
-                '-user_agent', userAgent, 
+                '-headers', headerStr, // Force FFmpeg to wear the disguise
                 '-i', audioUrl,
                 '-vn', '-f', 'mp3', '-q:a', '0',
                 'pipe:1',
@@ -234,9 +237,9 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
                 const ffmpeg = spawn('ffmpeg', [
                     '-hide_banner', '-loglevel', 'error',
                     '-http_proxy', 'socks5://127.0.0.1:40000',
-                    '-user_agent', userAgent,
+                    '-headers', headerStr, // Disguise the video fetch
                     '-i', vUrl,
-                    '-user_agent', userAgent,
+                    '-headers', headerStr, // Disguise the audio fetch
                     '-i', aUrl,
                     '-c', 'copy',
                     '-movflags', 'frag_keyframe+empty_moov',
@@ -256,7 +259,7 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
                 const getter = vUrl.startsWith('https') ? https : http;
                 getter.get(vUrl, { 
                     agent: proxyAgent, 
-                    headers: ytHeaders // Pass ALL headers
+                    headers: ytHeaders // Pass ALL exact headers to Node
                 }, (upstream) => {
                     if (upstream.statusCode >= 400) {
                         release();
