@@ -188,21 +188,30 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
     res.on('close', release);
 
     try {
-        if (isAudio) {
-            // ── Audio: get direct URL → pipe through ffmpeg → mp3 stream ──
-            const rawUrl = await runYtDlp(['--get-url', '-f', 'bestaudio', url]);
-            const audioUrl = rawUrl.trim().split('\n')[0];
+        const h = parseInt(height, 10) || 720;
+        
+        // Ask yt-dlp for the full JSON so we get URLs AND Headers
+        const formatQuery = isAudio 
+            ? 'bestaudio' 
+            : `best[height<=${h}][ext=mp4]/best[height<=${h}]/bestvideo[height<=${h}]+bestaudio`;
 
-            // Get source audio size for approximate Content-Length
-            const srcAudioSize = await getContentLength(audioUrl);
+        const rawInfo = await runYtDlp(['--dump-json', '-f', formatQuery, url]);
+        const info = JSON.parse(rawInfo);
+
+        // Extract the exact headers YouTube expects
+        const ytHeaders = info.http_headers || {};
+        const userAgent = ytHeaders['User-Agent'] || 'Mozilla/5.0';
+
+        if (isAudio) {
+            const audioUrl = info.url;
 
             res.setHeader('Content-Type', 'audio/mpeg');
             res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeTitle + '.mp3')}"`);
-            if (srcAudioSize > 0) res.setHeader('Content-Length', srcAudioSize);
 
             const ffmpeg = spawn('ffmpeg', [
                 '-hide_banner', '-loglevel', 'error',
                 '-http_proxy', 'socks5://127.0.0.1:40000',
+                '-user_agent', userAgent, 
                 '-i', audioUrl,
                 '-vn', '-f', 'mp3', '-q:a', '0',
                 'pipe:1',
@@ -213,30 +222,46 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
             ffmpeg.on('error', release);
 
         } else {
-            const h = parseInt(height, 10) || 720;
-
-            // Get direct CDN URL(s) for the requested quality
-            const rawUrls = await runYtDlp([
-                '--get-url', '-f',
-                `best[height<=${h}][ext=mp4]/best[height<=${h}]/bestvideo[height<=${h}]+bestaudio`,
-                url,
-            ]);
-            const urls = rawUrls.trim().split('\n').filter(Boolean);
             const filename = encodeURIComponent(safeTitle + '.mp4');
+            res.setHeader('Content-Type', 'video/mp4');
+            res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-            if (urls.length === 1) {
-                // ── Single pre-muxed URL: proxy stream from YouTube CDN ──
-                const getter = urls[0].startsWith('https') ? https : http;
-                getter.get(urls[0], { agent: proxyAgent, headers: { 'User-Agent': 'Mozilla/5.0' } }, (upstream) => {
+            if (info.requested_formats) {
+                // Merged Video + Audio
+                const vUrl = info.requested_formats[0].url;
+                const aUrl = info.requested_formats[1].url;
+
+                const ffmpeg = spawn('ffmpeg', [
+                    '-hide_banner', '-loglevel', 'error',
+                    '-http_proxy', 'socks5://127.0.0.1:40000',
+                    '-user_agent', userAgent,
+                    '-i', vUrl,
+                    '-user_agent', userAgent,
+                    '-i', aUrl,
+                    '-c', 'copy',
+                    '-movflags', 'frag_keyframe+empty_moov',
+                    '-f', 'mp4',
+                    'pipe:1',
+                ]);
+                ffmpeg.stdout.pipe(res);
+                ffmpeg.stderr.on('data', (d) => console.error('[FFMPEG-MERGE]', d.toString()));
+                ffmpeg.on('close', release);
+                ffmpeg.on('error', release);
+            } else {
+                // Single Pre-muxed URL
+                const vUrl = info.url;
+                const size = info.filesize || info.filesize_approx || 0;
+                if (size > 0) res.setHeader('Content-Length', size);
+
+                const getter = vUrl.startsWith('https') ? https : http;
+                getter.get(vUrl, { 
+                    agent: proxyAgent, 
+                    headers: ytHeaders // Pass ALL headers
+                }, (upstream) => {
                     if (upstream.statusCode >= 400) {
                         release();
                         if (!res.headersSent) res.status(502).json({ error: 'CDN error' });
                         return;
-                    }
-                    res.setHeader('Content-Type', 'video/mp4');
-                    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-                    if (upstream.headers['content-length']) {
-                        res.setHeader('Content-Length', upstream.headers['content-length']);
                     }
                     upstream.pipe(res);
                     upstream.on('end', release);
@@ -246,36 +271,6 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
                     console.error('[CDN]', err.message);
                     if (!res.headersSent) res.status(500).json({ error: 'Download failed' });
                 });
-
-            } else if (urls.length >= 2) {
-                // ── Two URLs (video + audio): merge via ffmpeg, stream directly ──
-                const [vidSize, audSize] = await Promise.all([
-                    getContentLength(urls[0]),
-                    getContentLength(urls[1]),
-                ]);
-                const totalSize = vidSize + audSize;
-
-                res.setHeader('Content-Type', 'video/mp4');
-                res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-                if (totalSize > 0) res.setHeader('Content-Length', totalSize);
-
-                const ffmpeg = spawn('ffmpeg', [
-                    '-hide_banner', '-loglevel', 'error',
-                    '-http_proxy', 'socks5://127.0.0.1:40000',
-                    '-i', urls[0],             // video stream URL
-                    '-i', urls[1],             // audio stream URL
-                    '-c', 'copy',              // no re-encoding, just remux
-                    '-movflags', 'frag_keyframe+empty_moov',  // streaming-friendly MP4
-                    '-f', 'mp4',
-                    'pipe:1',
-                ]);
-                ffmpeg.stdout.pipe(res);
-                ffmpeg.stderr.on('data', (d) => console.error('[FFMPEG-MERGE]', d.toString()));
-                ffmpeg.on('close', release);
-                ffmpeg.on('error', release);
-            } else {
-                release();
-                res.status(500).json({ error: 'No download URL found' });
             }
         }
     } catch (err) {
