@@ -96,7 +96,7 @@ function runYtDlp(args, timeoutMs = 30000) {
 function getContentLength(url) {
     return new Promise((resolve) => {
         const mod = url.startsWith('https') ? https : http;
-        const req = mod.request(url, { method: 'HEAD', headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+        const req = mod.request(url, { method: 'HEAD', agent: proxyAgent, headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
             resolve(parseInt(res.headers['content-length'], 10) || 0);
             res.resume(); // drain
         });
