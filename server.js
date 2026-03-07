@@ -14,6 +14,8 @@ const fs = require('fs');
 const os = require('os');
 const https = require('https');
 const http = require('http');
+const { SocksProxyAgent } = require('socks-proxy-agent');
+const proxyAgent = new SocksProxyAgent('socks5://127.0.0.1:40000');
 
 // ── Config ──────────────────────────────────────
 const PORT = process.env.PORT || 4000;
@@ -51,6 +53,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 const SPEED_FLAGS = [
     '--no-warnings', '--no-playlist', '--no-check-certificates',
     '--socket-timeout', '15', '--extractor-retries', '0',
+    '--proxy', 'socks5://127.0.0.1:40000',
 ];
 
 // ── Standard YouTube heights ────────────────────
@@ -199,6 +202,7 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
 
             const ffmpeg = spawn('ffmpeg', [
                 '-hide_banner', '-loglevel', 'error',
+                '-http_proxy', 'socks5://127.0.0.1:40000',
                 '-i', audioUrl,
                 '-vn', '-f', 'mp3', '-q:a', '0',
                 'pipe:1',
@@ -223,7 +227,7 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
             if (urls.length === 1) {
                 // ── Single pre-muxed URL: proxy stream from YouTube CDN ──
                 const getter = urls[0].startsWith('https') ? https : http;
-                getter.get(urls[0], { headers: { 'User-Agent': 'Mozilla/5.0' } }, (upstream) => {
+                getter.get(urls[0], { agent: proxyAgent, headers: { 'User-Agent': 'Mozilla/5.0' } }, (upstream) => {
                     if (upstream.statusCode >= 400) {
                         release();
                         if (!res.headersSent) res.status(502).json({ error: 'CDN error' });
@@ -257,6 +261,7 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
 
                 const ffmpeg = spawn('ffmpeg', [
                     '-hide_banner', '-loglevel', 'error',
+                    '-http_proxy', 'socks5://127.0.0.1:40000',
                     '-i', urls[0],             // video stream URL
                     '-i', urls[1],             // audio stream URL
                     '-c', 'copy',              // no re-encoding, just remux
