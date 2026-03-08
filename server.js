@@ -163,49 +163,72 @@ app.get('/api/download', downloadLimiter, async (req, res) => {
 
     const isAudio = type === 'audio';
     
-    // 1. Create a unique, hidden temporary file path for this download
-    const tmpFile = path.join(os.tmpdir(), `dl_${Date.now()}_${Math.floor(Math.random()*1000)}.${isAudio ? 'mp3' : 'mp4'}`);
+    // 1. Give the file a unique ID, but let yt-dlp handle the extension dynamically
+    const baseId = `dl_${Date.now()}_${Math.floor(Math.random()*1000)}`;
+    const tmpTemplate = path.join(os.tmpdir(), `${baseId}.%(ext)s`);
 
     let released = false;
+    let finalFilePath = null;
+
     const cleanup = () => { 
         if (!released) { released = true; releaseSlot(); }
-        // 2. Instantly delete the file from the server once sent to save disk space
-        if (fs.existsSync(tmpFile)) fs.unlink(tmpFile, () => {});
+        
+        // Clean up the main file
+        if (finalFilePath && fs.existsSync(finalFilePath)) {
+            fs.unlink(finalFilePath, () => {});
+        }
+        
+        // Clean up any stray fragments yt-dlp might have left behind
+        try {
+            const files = fs.readdirSync(os.tmpdir()).filter(f => f.startsWith(baseId));
+            for (const f of files) {
+                fs.unlink(path.join(os.tmpdir(), f), () => {});
+            }
+        } catch(e) {}
     };
     res.on('close', cleanup);
 
     try {
         const h = parseInt(height, 10) || 720;
+        
+        // 2. Removed strict [ext=mp4]
         const format = isAudio 
             ? 'bestaudio' 
-            : `bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${h}]/best`;
+            : `bestvideo[height<=${h}]+bestaudio/best[height<=${h}]/best`;
 
-        // 3. let yt-dlp do ALL the downloading, completely bypassing FFmpeg's network block
-        const args = ['--quiet', '-f', format, '-o', tmpFile, url];
+        const args = ['--quiet', '-f', format, '-o', tmpTemplate, url];
 
         if (isAudio) {
             args.push('-x', '--audio-format', 'mp3', '--audio-quality', '0');
         } else {
-            args.push('--merge-output-format', 'mp4');
+            args.push('--merge-output-format', 'mp4'); // FFmpeg handle the webm to mp4 conversion
         }
 
-        // Give yt-dlp up to 5 minutes to download and merge the file locally
+        // 3. yt-dlp download and process
         await runYtDlp(args, 300000); 
 
-        // Verify the file was created successfully
-        if (!fs.existsSync(tmpFile)) {
+        // 4. Find the actual finished file in the temp directory
+        const tempFiles = fs.readdirSync(os.tmpdir()).filter(f => f.startsWith(baseId));
+        if (tempFiles.length === 0) {
             throw new Error("Download failed to create temporary file.");
         }
+        
+        finalFilePath = path.join(os.tmpdir(), tempFiles[0]);
+        const stat = fs.statSync(finalFilePath);
+        
+        if (stat.size === 0) {
+            throw new Error("File processing failed (0 bytes).");
+        }
 
-        // 4. Stream the securely downloaded file directly to the user's browser
-        const filename = encodeURIComponent(safeTitle + (isAudio ? '.mp3' : '.mp4'));
-        const stat = fs.statSync(tmpFile);
+        // Get the final extension
+        const ext = path.extname(finalFilePath).replace('.', '') || (isAudio ? 'mp3' : 'mp4');
+        const filename = encodeURIComponent(`${safeTitle}.${ext}`);
         
         res.setHeader('Content-Type', isAudio ? 'audio/mpeg' : 'video/mp4');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-        res.setHeader('Content-Length', stat.size); // Tells browser the exact file size
+        res.setHeader('Content-Length', stat.size); 
 
-        const stream = fs.createReadStream(tmpFile);
+        const stream = fs.createReadStream(finalFilePath);
         stream.pipe(res);
         stream.on('end', cleanup);
         stream.on('error', cleanup);
