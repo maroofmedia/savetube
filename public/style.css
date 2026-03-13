@@ -59,7 +59,9 @@ body {
 }
 
 .hero-badge {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
   font-size: .68rem;
   font-weight: 600;
   letter-spacing: .06em;
@@ -70,7 +72,45 @@ body {
   border-radius: 20px;
   margin-bottom: 22px;
   border: 1px solid rgba(109, 92, 255, .15);
+  box-shadow: 0 4px 12px rgba(109, 92, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
+
+.hero-badge:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(109, 92, 255, 0.15);
+  border-color: rgba(109, 92, 255, 0.3);
+}
+
+.badge-sep {
+  width: 1px;
+  height: 12px;
+  background: rgba(109, 92, 255, .3);
+}
+
+.gh-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  text-decoration: none !important;
+  transition: color 0.2s ease;
+}
+
+.gh-link svg {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+.gh-link:hover {
+  color: var(--text);
+}
+
+.gh-link:hover svg {
+  transform: scale(1.1);
+}
+
 
 .hero-title {
   font-size: 2rem;
